@@ -1,64 +1,52 @@
-timestamp=$(date '+%d%m%Y-%H%M%S')
-myname="bilal"
-s3://upgrad-mohammed/logs/
 sudo apt update -y
-sudo apt install apache2 -y
-if [ $? -eq 0 ]
-then
-    echo "Apache2 is installed. Skipping Apache2 installation."
-else
-    echo "Apache2 is not installed. Installing"
-    sudo apt install apache2 -y &> /dev/null
+echo "The package has been updated"
+timestamp=$(date '+%d%m%Y-%H%M%S')
+myname="mohammed"
+s3_bucket="upgrad-mohammed"
+
+pkgs='apache2'
+if ! dpkg -s $pkgs >/dev/null 2>&1; then
+  sudo apt-get install $pkgs -y
 fi
+echo "Apache 2 check is completed"
 
-if [ `service apache2 status | grep running | wc -l` == 1 ]
-then
-	echo "Apache2 is running"
-else
-	echo "Apache2 is not running"
-	echo "Starting apache2"
-	sudo service apache2 start 
+apache2_check="$(systemctl status apache2.service | grep Active | awk {'print $3'})"
+if [ "${apache2_check}" = "(dead)" ]; then
+        systemctl enable apache2.service
+        echo "service is enabled"
 fi
-
-if [ `service apache2 status | grep enabled | wc -l` == 1 ]
-then
-	echo "Apache2 is enabled"
+ServiceStatus="$(systemctl is-active apache2.service)"
+if [ "${ServiceStatus}" = "active" ]; then
+        echo "Apache2 is already running" 
 else
-	echo "Apache2 is not enabled"
-	echo "Enabling apache2"
-	sudo systemctl enable apache2
+    sudo systemctl start apache2
+    echo "Apache2 Service has been started"
 fi
-
-
-echo "Compressing logs and storing into /tmp"
+echo "Apache2 service check has been comepleted, Service has been started if service was not started"
+sudo systemctl status apache2
+echo "Apache2 Status Running"
 
 cd /var/log/apache2/
-
 tar -cvf /tmp/${myname}-httpd-logs-${timestamp}.tar *.log
+size=$(sudo du -sh /tmp/${myname}-httpd-logs-${timestamp}.tar | awk '{print $1}')
 
-echo "Copying logs to s3"
+   
+	if [ -e /var/www/html/inventory.html ]
+	then
+	echo "<br>httpd-logs &nbsp;&nbsp;&nbsp; ${timestamp} &nbsp;&nbsp;&nbsp; tar &nbsp;&nbsp;&nbsp; ${size}" >> /var/www/html/inventory.html
+	else
+	echo "<b>Log Type &nbsp;&nbsp;&nbsp;&nbsp; Date Created &nbsp;&nbsp;&nbsp;&nbsp; Type &nbsp;&nbsp;&nbsp;&nbsp; Size</b><br>" > /var/www/html/inventory.html
+	echo "<br>httpd-logs &nbsp;&nbsp;&nbsp; ${timestamp} &nbsp;&nbsp;&nbsp; tar &nbsp;&nbsp;&nbsp; ${size}" >> /var/www/html/inventory.html
+	fi
 
 
 aws s3 \
 cp /tmp/${myname}-httpd-logs-${timestamp}.tar \
-s3://${s3_bucket}/${myname}-httpd-logs-${timestamp}.tar
+s3://${s3_bucket}/${myname}-httpd-logs-${timestamp}.tar 
 
-if [ -e /var/www/html/inventory.html ]
+# check cron file is exist of not, if it is doesn't exist then create it 
+# Note:- script will execute once in day at 3.30AM 
+if  [ ! -f  /etc/cron.d/automation ]
 then
-    echo "Inventory exists"
-else
-    touch /var/www/html/inventory.html
-    echo "<b>Log Type &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Date Created &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Type &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Size</b>" >> /var/www/html/inventory.html
+	echo "30 3 * * * root /root/Automation_Project/automation.sh" > /etc/cron.d/automation
 fi
-
-echo "<br>httpd-logs &nbsp;&nbsp;&nbsp;&nbsp; ${timestamp} &nbsp;&nbsp;&nbsp;&nbsp; tar &nbsp;&nbsp;&nbsp;&nbsp; `du -h /tmp/${myname}-httpd-logs-${timestamp}.tar | awk '{print $1}'`" >> /var/www/html/inventory.html
-
-if [ -e /etc/cron.d/automation ]
-then
-    echo "Cron job exists"
-else
-    touch /etc/cron.d/automation
-    echo "0 0 * * * root /root/Automation_Project/automation.sh" > /etc/cron.d/automation
-    echo "Cron job added"
-fi
-
